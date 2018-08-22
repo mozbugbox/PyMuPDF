@@ -111,13 +111,13 @@ def getTextUWords(page):
 # A function for extracting a page's text.
 #==============================================================================
 def getText(page, output = "text"):
-    '''Extract a PDF page's text. Parameters:\noutput option: text, html, dict, json, xhtml or xml.\nReturns the output of TextPage methods extractText, extractHTML, extractDICT, extractJSON, extractXHTML or etractXML respectively. Default and misspelling choice is "text".'''
+    '''Extract a PDF page's text. Parameters:\noutput option: text, html, dict, json, rawdict, xhtml or xml.\nReturns the output of TextPage methods extractText, extractHTML, extractDICT, extractJSON, extractRAWDICT, extractXHTML or etractXML respectively. Default and misspelling choice is "text".'''
     fitz.CheckParent(page)
     dl = page.getDisplayList()
     # available output types
-    formats = ("text", "html", "json", "xml", "xhtml", "dict")
+    formats = ("text", "html", "json", "xml", "xhtml", "dict", "rawdict")
     # choose which of them also include images in the TextPage
-    images = (0, 1, 1, 0, 1, 1)      # controls image inclusion in text page
+    images = (0, 1, 1, 0, 1, 1, 1)      # controls image inclusion in text page
     try:
         f = formats.index(output.lower())
     except:

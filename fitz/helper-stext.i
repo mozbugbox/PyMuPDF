@@ -129,7 +129,85 @@ JM_style_end_dict(fz_context *ctx, fz_buffer *buff, PyObject *span, PyObject *sp
 }
 
 PyObject *
-JM_extract_stext_textblock_as_dict(fz_context *ctx, fz_stext_block *block)
+JM_extract_stext_textchar_as_dict(fz_context *ctx, fz_stext_char *ch)
+{
+    PyObject *chardict = NULL;
+
+    chardict = PyDict_New();
+    PyDict_SetItemString(chardict, "c",  Py_BuildValue("C", ch->c));
+    PyDict_SetItemString(chardict, "origin",  Py_BuildValue("ff", ch->origin.x, ch->origin.y));
+    PyDict_SetItemString(chardict, "bbox",   Py_BuildValue("ffff",
+                                     ch->bbox.x0, ch->bbox.y0,
+                                     ch->bbox.x1, ch->bbox.y1));
+    return chardict;
+}
+
+PyObject *
+JM_extract_stext_textline_as_dict(fz_context *ctx, fz_stext_line *line)
+{
+    fz_stext_char *ch;
+    fz_font *font = NULL;
+    fz_buffer *buff = NULL;
+    float size = 0;
+    int sup = 0;
+    PyObject *span=NULL, *spanlist = NULL, *linedict = NULL, *charlist;
+    PyObject *chardict;
+
+    linedict = PyDict_New();
+    fz_rect *linerect = JM_empty_rect();
+    PyDict_SetItemString(linedict, "wmode",  Py_BuildValue("i", line->wmode));
+    PyDict_SetItemString(linedict, "dir",  Py_BuildValue("ff", line->dir.x, line->dir.y));
+    spanlist = PyList_New(0);
+    font = NULL;
+    size = 0;
+
+    for (ch = line->first_char; ch; ch = ch->next)
+    {
+        JM_join_rect(linerect, &ch->bbox, ch->size);
+
+        int ch_sup = detect_super_script(line, ch);
+        if (ch->font != font || ch->size != size)
+        {   // start new span
+            if (font)    // must finish old span first
+            {
+                PyDict_SetItemString(span, "chars",  charlist);
+                Py_CLEAR(charlist);
+                JM_style_end_dict(ctx, buff, span, spanlist);
+                Py_CLEAR(span);
+                font = NULL;
+            }
+            font = ch->font;
+            size = ch->size;
+            sup = ch_sup;
+            charlist = PyList_New(0);
+            span = PyDict_New();
+            JM_style_begin_dict(ctx, span, font, size, sup);
+        }
+        chardict = JM_extract_stext_textchar_as_dict(ctx, ch);
+        PyList_Append(charlist, chardict);
+        Py_CLEAR(chardict);
+    }
+    if (font)
+    {
+        PyDict_SetItemString(span, "chars",  charlist);
+        Py_CLEAR(charlist);
+        JM_style_end_dict(ctx, buff, span, spanlist);
+        Py_CLEAR(span);
+        font = NULL;
+    }
+
+    PyDict_SetItemString(linedict, "spans",  spanlist);
+    Py_CLEAR(spanlist);
+    PyDict_SetItemString(linedict, "bbox",   Py_BuildValue("ffff",
+                                     linerect->x0, linerect->y0,
+                                     linerect->x1, linerect->y1));
+
+    free(linerect);
+    return linedict;
+}
+
+PyObject *
+JM_extract_stext_textblock_as_dict(fz_context *ctx, fz_stext_block *block, int rawdict)
 {
     fz_stext_line *line;
     fz_stext_char *ch;
@@ -145,6 +223,14 @@ JM_extract_stext_textblock_as_dict(fz_context *ctx, fz_stext_block *block)
 
     for (line = block->u.t.first_line; line; line = line->next)
     {
+        if (rawdict != 0) {
+            linedict = JM_extract_stext_textline_as_dict(ctx, line);
+            PyList_Append(linelist, linedict);
+            Py_CLEAR(linedict);
+            JM_join_rect(blockrect, &line->bbox, 0.0f);
+            continue;
+        }
+
         linedict = PyDict_New();
         fz_rect *linerect = JM_empty_rect();
         PyDict_SetItemString(linedict, "wmode",  Py_BuildValue("i", line->wmode));
@@ -268,7 +354,7 @@ JM_extract_stext_imageblock_as_dict(fz_context *ctx, fz_stext_block *block)
 }
 
 PyObject *
-JM_stext_page_as_dict(fz_context *ctx, fz_stext_page *page)
+JM_stext_page_as_dict(fz_context *ctx, fz_stext_page *page, int rawdict)
 {
     PyObject *dict = PyDict_New();
     PyObject *blocklist = PyList_New(0);
@@ -282,7 +368,7 @@ JM_stext_page_as_dict(fz_context *ctx, fz_stext_page *page)
         if (block->type == FZ_STEXT_BLOCK_IMAGE)
             PyList_Append(blocklist, JM_extract_stext_imageblock_as_dict(ctx, block));
         else
-            PyList_Append(blocklist, JM_extract_stext_textblock_as_dict(ctx, block));
+            PyList_Append(blocklist, JM_extract_stext_textblock_as_dict(ctx, block, rawdict));
     }
     PyDict_SetItemString(dict, "blocks", blocklist);
     Py_CLEAR(blocklist);
